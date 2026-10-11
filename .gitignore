@@ -4,3 +4,8 @@ dist/
 .env*
 coverage/
 .DS_Store
+
+dist-desktop/
+release/
+*.m3u
+*.m3u8

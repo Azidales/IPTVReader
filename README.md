@@ -60,3 +60,44 @@ Dependências de reprodução são carregadas **sob demanda** via importações 
 - EPG em Web Worker para XMLTV extensos.
 - Paginação/virtualização para catálogos enormes e melhoria de acessibilidade no teclado/TV.
 - Provedor de gateway opcional para formatos incompatíveis, sem ultrapassar autenticação, DRM ou direitos de acesso.
+
+---
+
+## IPTVReader Desktop — Windows (versão experimental 0.2.0)
+
+A versão Windows usa **Electron + mpv**. O catálogo é processado pelo Node.js localmente, evitando as limitações de CORS/Mixed Content do GitHub Pages. O aplicativo não inclui vídeos nem playlists de terceiros.
+
+### Baixar o instalador
+
+1. Acesse [GitHub Actions → Windows Desktop Build](https://github.com/Azidales/IPTVReader/actions/workflows/desktop-windows.yml).
+2. Abra a **última execução concluída com sucesso**, baixe o artefato `IPTVReader-Windows-x64` e extraia o ZIP.
+3. Execute o instalador (`Setup.exe`) ou a versão portátil (`.exe`). Como não há certificado de assinatura de código, o SmartScreen pode solicitar confirmação antes de executar.
+4. Instale o [mpv para Windows](https://mpv.io/installation/) separadamente, ou coloque `mpv.exe` no PATH. Se não for detectado, use **Selecionar mpv.exe** na interface.
+5. Em **Importar M3U**, selecione o arquivo da sua playlist. O primeiro processamento pode levar alguns segundos para centenas de milhares de itens. Depois selecione um canal.
+
+A janela de vídeo abre no mpv, em tela cheia. **Alt+Tab** retorna ao catálogo do IPTVReader; **F** alterna a tela cheia do mpv. O navegador não é necessário para reproduzir os streams.
+
+### Desenvolver localmente
+
+```bash
+npm install
+npm run test:desktop
+npm run desktop:dev
+```
+
+O `desktop:dev` compila o frontend desktop com Vite e abre o Electron. Para criar instalador/portátil (no Windows):
+
+```bash
+npm run build:desktop
+npx electron-builder --win --publish never
+```
+
+### Arquitetura e limitações
+
+- `desktop/catalog.cjs`: importação progressiva de M3U (até 1 GB), índice local, consultas por categoria, pesquisa e paginação sem enviar 300 mil itens de uma vez ao renderer.
+- `desktop/main.cjs`: janela segura do Electron, leitura de arquivo local e requisições M3U remotas pelo processo principal.
+- `desktop/mpv.cjs`: reprodução de links via mpv usando **IPC local** e sem expor o endereço de vídeo na linha de comando.
+- `desktop/preload.cjs`: API restrita para a interface, sem `nodeIntegration`.
+- `src/desktop.ts`: interface de TV/desktop com favoritos, pesquisa e seleção de canais, filmes e episódios.
+
+**Avisos:** o mpv **não é incluído** nos instaladores desta versão. Streaming HTTP transporta credenciais e dados sem criptografia; a playlist importada também é salva localmente no perfil do aplicativo e pode conter links com credenciais em texto claro. Proteja o PC e use apenas fontes autorizadas. Não envie suas playlists para repositórios públicos. A ausência de DRM/codec compatível pode impedir a reprodução de alguns itens. Os episódios são apresentados individualmente conforme vêm na M3U (a organização em temporadas é futura). A página web original continua independente e não recebe essas permissões locais.

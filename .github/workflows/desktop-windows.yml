@@ -1,0 +1,42 @@
+name: Windows Desktop Build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'src/desktop.ts'
+      - 'src/styles/desktop.css'
+      - 'desktop.html'
+      - 'package.json'
+      - 'vite.desktop.config.ts'
+      - 'electron-builder.yml'
+      - '.github/workflows/desktop-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate catalog and scripts
+        run: npm run test:desktop
+      - name: Build desktop renderer
+        run: npm run build:desktop
+      - name: Build installer and portable executable
+        run: npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload Windows builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: IPTVReader-Windows-x64
+          path: |
+            release/*.exe
+          retention-days: 30
