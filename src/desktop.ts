@@ -105,7 +105,7 @@ async function updateList(){const token=++state.seq;try{
  drawNav();
  }catch(e){if(token===state.seq)message(String(e),true);}}
 async function play(row:Item){state.selected=row;$('#now-name').textContent=row.name;$('#now-group').textContent=row.group;$('#player-title').textContent=row.name;$('#now-type').textContent=labels[row.type as Section]?.toUpperCase()||'REPRODUÇÃO';$('#player-hint').textContent='Carregando vídeo integrado...';($('#fav-selected') as HTMLButtonElement).disabled=false;$('#fav-selected').textContent=state.favorites.has(row.id)?'★':'☆';
- try{await api.play(row.id);$('#player-hint').textContent='O vídeo está sendo reproduzido nesta área.';message('Inicializando reprodução integrada.');}
+ try{const r=$('.player-surface').getBoundingClientRect();await api.playerBounds({x:r.x,y:r.y,width:r.width,height:r.height});await api.play(row.id);$('#player-hint').textContent='Reprodução inicializada. Aguardando vídeo.';message('Inicializando reprodução integrada.');}
  catch(e){$('#player-hint').textContent='Não foi possível abrir o vídeo.';message((e as Error).message||String(e),true);}
  void updateList();}
 async function refreshMpv(){const st=await api.playerStatus();state.mpvReady=st.ready;$('#mpv-status').textContent=st.ready?'mpv encontrado — pronto para reprodução':'mpv não encontrado — selecione mpv.exe ou instale o reprodutor';$('#mpv-card').classList.toggle('missing',!st.ready);}
