@@ -3,6 +3,7 @@ import type { Channel, Program, Section, Source } from './core/types';
 import { parseM3U } from './core/m3u';
 import { parseXmltv, currentProgram } from './core/epg';
 import { connectXtream, getEpisodes } from './core/xtream';
+import { requireBrowserCompatibleUrl } from './core/urls';
 import { validateRemote } from './core/urls';
 import { loadSources, saveSources, favorites, saveFavorites } from './core/storage';
 import { PlayerManager } from './player/manager';
@@ -149,7 +150,7 @@ async function addSource(event: Event): Promise<void> {
     let source:Source;
     if (kind==='xtream') source=await connectXtream({server:field('server'),username:field('username'),password:field('password')},id,name);
     else if(kind==='direct') {
-      const url=validateRemote(field('url'));source={id,name,kind,items:[{id:`${id}:0`,sourceId:id,name,group:'Links diretos',url,type:'live'}]};
+      const url=requireBrowserCompatibleUrl(field('url'));source={id,name,kind,items:[{id:`${id}:0`,sourceId:id,name,group:'Links diretos',url,type:'live'}]};
     } else {
       let content:string, base:string|undefined;
       if(kind==='file') { const file=input.get('file'); if(!(file instanceof File)||!file.size) throw new Error('Selecione um arquivo M3U.'); if(file.size>25*1024*1024) throw new Error('O limite por arquivo é 25 MB.');content=await file.text(); }
@@ -161,6 +162,7 @@ async function addSource(event: Event): Promise<void> {
         if(length>25*1024*1024)throw new Error('A lista excede 25 MB.');
         content=await response.text();if(content.length>25*1024*1024)throw new Error('A lista excede 25 MB.');
       }
+      if (base) requireBrowserCompatibleUrl(base);
       const parsed=parseM3U(content,id,base);source={id,name,kind,items:parsed.items,epgUrl:parsed.epgUrl,originUrl:base};
     }
     state.sources.push(source);
@@ -185,6 +187,7 @@ async function refresh():Promise<void>{
   try {
     for(const source of sources){
       try {
+        requireBrowserCompatibleUrl(source.originUrl!);
         const response=await fetch(source.originUrl!,{signal:AbortSignal.timeout(25000),cache:'no-store'});
         if(!response.ok) throw new Error(`HTTP ${response.status}`);
         const text=await response.text();
