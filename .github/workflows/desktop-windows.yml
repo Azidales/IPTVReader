@@ -33,10 +33,30 @@ jobs:
         run: npx electron-builder --win --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Upload Windows builds
+      - name: Separate Windows packages and checksums
+        shell: pwsh
+        run: |
+          $executables = @(Get-ChildItem release -Filter '*.exe')
+          $installer = @($executables | Where-Object { $_.Name -match 'Setup' })
+          $portable = @($executables | Where-Object { $_.Name -notmatch 'Setup' })
+          if ($installer.Count -ne 1 -or $portable.Count -ne 1) { throw "Expected exactly one installer and one portable executable." }
+          New-Item -ItemType Directory -Path release/portable,release/installer -Force | Out-Null
+          Copy-Item $installer[0].FullName release/installer/IPTVReader-Setup.exe
+          Copy-Item $portable[0].FullName release/portable/IPTVReader-Portable.exe
+          foreach ($name in @('installer','portable')) {
+            $exe = @(Get-ChildItem "release/$name" -Filter '*.exe')[0]
+            $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+            "$hash  $($exe.Name)" | Set-Content -Encoding ascii -Path "release/$name/SHA256SUMS.txt"
+          }
+      - name: Upload portable only
         uses: actions/upload-artifact@v4
         with:
-          name: IPTVReader-Windows-x64
-          path: |
-            release/*.exe
+          name: IPTVReader-Windows-Portable
+          path: release/portable/*
+          retention-days: 30
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: IPTVReader-Windows-Installer
+          path: release/installer/*
           retention-days: 30
