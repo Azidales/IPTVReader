@@ -15,3 +15,11 @@ export function resolveMediaUrl(value: string, base?: string): string | null {
 export function mayBeBlockedByHttps(url: string): boolean {
   return typeof location !== 'undefined' && location.protocol === 'https:' && url.startsWith('http:');
 }
+
+export function requireBrowserCompatibleUrl(value: string): string {
+  const url = httpUrl(value);
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.protocol === 'http:') {
+    throw new Error('Este servidor usa HTTP, mas o IPTVReader está em HTTPS (GitHub Pages). O navegador bloqueia essa conexão por Mixed Content. Solicite ao provedor um endereço HTTPS compatível ou utilize um gateway HTTPS privado e autorizado. Trocar HTTP por HTTPS sem suporte do servidor não resolve.');
+  }
+  return url.href;
+}
