@@ -5,11 +5,37 @@ const path=require('node:path');const os=require('node:os');
 const {pipeline}=require('node:stream/promises');
 const {Readable,Transform}=require('node:stream');
 const {Catalog}=require('./catalog.cjs');
-const {MpvController,resolveMpv}=require('./mpv.cjs');
-let window=null, catalog=null, settings={mpvPath:''}, importing=false;
+const {MpvController,resolveMpv,nativeWindowId}=require('./mpv.cjs');
+let window=null, videoHost=null, videoRect=null, videoSurfaceVisible=true, catalog=null, settings={mpvPath:''}, importing=false;
 const settingsPath=()=>path.join(app.getPath('userData'),'desktop-settings.json');
-const player=new MpvController(()=>settings.mpvPath);
+const player=new MpvController(()=>settings.mpvPath,event=>notify('player:event',event));
 function notify(type,value){if(window&&!window.isDestroyed())window.webContents.send(type,value);}
+function ensureVideoHost(){
+  if(videoHost && !videoHost.isDestroyed())return videoHost;
+  if(!window || window.isDestroyed())throw new Error('Janela principal não disponível.');
+  videoHost=new BrowserWindow({
+    parent:window,frame:false,show:false,focusable:false,resizable:false,
+    skipTaskbar:true,backgroundColor:'#000000',webPreferences:{
+      sandbox:true,contextIsolation:true,nodeIntegration:false
+    }
+  });
+  videoHost.setMenuBarVisibility(false);
+  videoHost.on('closed',()=>{videoHost=null;player.close();});
+  return videoHost;
+}
+function syncVideoHost(){
+  if(!videoHost || videoHost.isDestroyed() || !window || window.isDestroyed())return;
+  if(!videoRect || !videoSurfaceVisible || window.isMinimized() || !window.isVisible()){
+    videoHost.hide();return;
+  }
+  const area=window.getContentBounds();
+  const x=Math.max(0,Math.round(videoRect.x)),y=Math.max(0,Math.round(videoRect.y));
+  const width=Math.min(Math.round(videoRect.width),Math.max(0,area.width-x));
+  const height=Math.min(Math.round(videoRect.height),Math.max(0,area.height-y));
+  if(width<80||height<45){videoHost.hide();return;}
+  videoHost.setBounds({x:area.x+x,y:area.y+y,width,height});
+  if(player.isActive())videoHost.showInactive();
+}
 async function persistSettings(){await fsp.writeFile(settingsPath(),JSON.stringify(settings));}
 async function importSelected(file,name){
  if(importing) throw new Error('Já existe uma importação em andamento.');
@@ -48,12 +74,23 @@ function setupIPC(){
  ipcMain.handle('catalog:remove',async(_event,id)=>{const result=await catalog.remove(id);notify('catalog:updated',catalog.summaries());return result;});
  ipcMain.handle('player:play',async(_event,id)=>{
   const item=await catalog.item(id);if(!item)throw new Error('Item não encontrado no catálogo.');
-  await player.play(item.url);return {name:item.name,group:item.group};
+  const host=ensureVideoHost();
+  const handle=nativeWindowId(host.getNativeWindowHandle());
+  try {await player.play(item.url,handle);syncVideoHost();return {name:item.name,group:item.group};}
+  catch(err){host.hide();throw err;}
  });
  ipcMain.handle('player:command',(_event,cmd)=>{
   const allowed={pause:['cycle','pause'],stop:['stop'],mute:['cycle','mute'],fullscreen:['cycle','fullscreen']};
   if(!Object.hasOwn(allowed,cmd))throw new Error('Comando não permitido.');
-  player.command(allowed[cmd]);return true;
+  const ok=player.command(allowed[cmd]);if(cmd==='stop'){videoHost?.hide();notify('player:event',{type:'stopped'});}return ok;
+ });
+ ipcMain.handle('player:bounds',(_event,rect)=>{
+  if(!rect || ![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite))return false;
+  videoRect={x:rect.x,y:rect.y,width:rect.width,height:rect.height};
+  syncVideoHost();return true;
+ });
+ ipcMain.handle('player:surface-visible',(_event,value)=>{
+  videoSurfaceVisible=value===true;syncVideoHost();return true;
  });
  ipcMain.handle('player:status',()=>({ready:!!resolveMpv(settings.mpvPath),configured:settings.mpvPath||''}));
  ipcMain.handle('player:choose',async()=>{
@@ -70,7 +107,12 @@ function createWindow(){
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
  window.webContents.on('will-navigate',event=>event.preventDefault());
  window.loadFile(path.join(__dirname,'..','dist-desktop','desktop.html'));
- window.on('closed',()=>{window=null;player.close();});
+ window.on('move',syncVideoHost);
+ window.on('resize',syncVideoHost);
+ window.on('restore',syncVideoHost);
+ window.on('minimize',()=>videoHost?.hide());
+ window.on('hide',()=>videoHost?.hide());
+ window.on('closed',()=>{player.close();if(videoHost&&!videoHost.isDestroyed())videoHost.destroy();videoHost=null;window=null;});
 }
 app.whenReady().then(async()=>{
  app.setAppUserModelId('com.iptvreader.desktop');

@@ -7,9 +7,10 @@ type MpvStatus={ready:boolean;configured:string};
 type DesktopAPI={
   sources():Promise<Source[]>;search(q:{section:Section;search:string;group:string;page:number;size:number;favorites?:string[]}):Promise<Results>;
   pickPlaylist():Promise<Source|null>;importUrl(url:string):Promise<Source|null>;removeSource(id:string):Promise<boolean>;
-  play(id:string):Promise<{name:string;group:string}>;playerCommand(cmd:string):Promise<boolean>;
+  play(id:string):Promise<{name:string;group:string}>;playerBounds(rect:{x:number;y:number;width:number;height:number}):Promise<boolean>;playerSurfaceVisible(visible:boolean):Promise<boolean>;playerCommand(cmd:string):Promise<boolean>;
   playerStatus():Promise<MpvStatus>;chooseMpv():Promise<MpvStatus|null>;downloadMpv():Promise<void>;fullscreen():Promise<boolean>;
   onProgress(cb:(data:{count:number;bytes:number;totalBytes:number;done?:boolean})=>void):()=>void;
+  onPlayerEvent(cb:(event:{type:string;detail?:string})=>void):()=>void;
   onDownload(cb:(data:{bytes:number})=>void):()=>void;onUpdate(cb:(sources:Source[])=>void):()=>void;
 };
 declare global{interface Window{iptvDesktop:DesktopAPI}}
@@ -29,11 +30,11 @@ function installUI(){
   <div class="side-bottom"><span class="status-dot"></span> Reprodução local e direta <small>Sem gateway e sem assinaturas do aplicativo</small></div></aside>
   <main class="main"><header class="topbar"><div class="crumb">IPTVREADER <span>/</span> <strong id="crumb">TV ao vivo</strong></div><div class="top-actions"><button id="fullscreen" class="neutral-btn">⛶ Tela cheia</button><button id="add-source" class="primary-btn">＋ Importar M3U</button></div></header>
   <div class="body"><div class="title-row"><div><div class="eyebrow">✦ SUA CENTRAL DE ENTRETENIMENTO</div><h1 id="heading">TV ao vivo</h1><p>Seu catálogo, seus dispositivos, sem depender de um navegador.</p></div><span class="total-badge" id="total-items">0 itens</span></div>
-  <div class="columns"><div class="watch-column"><section class="watch-card"><div class="player-surface"><div class="surface-glow"></div><div class="screen-center"><div class="play-emblem">▶</div><h2 id="player-title">Pronto para assistir</h2><p id="player-hint">Selecione um item do catálogo. O vídeo será aberto pelo mpv em uma janela própria.</p></div></div>
+  <div class="columns"><div class="watch-column"><section class="watch-card"><div class="player-surface"><div class="surface-glow"></div><div class="screen-center"><div class="play-emblem">▶</div><h2 id="player-title">Pronto para assistir</h2><p id="player-hint">Selecione um item do catálogo. O vídeo será reproduzido pelo mpv nesta área, dentro do IPTVReader.</p></div></div>
     <div class="watch-info"><div class="watch-kicker"><span class="live-mark"></span><span id="now-type">NENHUMA REPRODUÇÃO</span></div><div class="watch-details"><div class="watch-icon">▶</div><div><h3 id="now-name">Nenhum conteúdo selecionado</h3><p id="now-group">Importe sua lista para começar.</p></div><button id="fav-selected" class="circle-btn" title="Favoritar" disabled>☆</button></div>
     <div class="watch-controls"><button data-command="pause" class="neutral-btn">⏯ Pausar / continuar</button><button data-command="mute" class="neutral-btn">♫ Mudo</button><button data-command="stop" class="neutral-btn">■ Parar</button></div></div></section>
     <section class="mpv-card" id="mpv-card"><div><strong>Reprodutor mpv</strong><p id="mpv-status">Verificando instalação...</p></div><div class="mpv-actions"><button id="choose-mpv" class="neutral-btn">Selecionar mpv.exe</button><button id="download-mpv" class="outline-btn">Obter mpv ↗</button></div></section>
-    <div class="tip">ℹ Os vídeos são reproduzidos diretamente pelo mpv. Links HTTP funcionam sem o bloqueio de Mixed Content do GitHub Pages. Os dados da playlist ficam apenas neste computador.</div>
+    <div class="tip">ℹ A reprodução é integrada ao IPTVReader com mpv nativo. Links HTTP continuam funcionando fora das restrições do navegador. Os dados da playlist ficam apenas neste computador.</div>
   </div><section class="catalog"><div class="catalog-heading"><div><h2>Explorar conteúdo</h2><p id="result-count">Selecione um canal, filme ou episódio</p></div><button id="refresh-btn" class="circle-btn" title="Atualizar catálogo">↻</button></div>
   <div class="search-box"><span>⌕</span><input id="search" type="search" autocomplete="off" placeholder="Pesquisar em 330 mil itens..." /></div><select id="groups" aria-label="Filtrar por categoria"><option value="">Todas as categorias</option></select>
   <div id="rows" class="rows"></div><div class="pagination"><button id="previous" class="neutral-btn">← Anterior</button><span id="page-info">0 / 0</span><button id="next" class="neutral-btn">Próximo →</button></div></section></div>
@@ -61,6 +62,26 @@ function installUI(){
   api.onProgress(p=>{const pct=p.totalBytes?Math.round(p.bytes*100/p.totalBytes):0;$('#import-status').textContent=`Importando... ${nf(p.count)} entradas processadas · ${pct}%`;});
   api.onDownload(p=>{$('#import-status').textContent=`Baixando M3U: ${nf(Math.round(p.bytes/1024/1024))} MB`;});
   api.onUpdate(s=>{state.source=s;drawSources();void updateList();});
+  api.onPlayerEvent(event=>{
+    if(event.type==='loading'){$('#mpv-status').textContent='Carregando transmissão...';}
+    if(event.type==='playing'){$('#mpv-status').textContent='Reproduzindo dentro do IPTVReader';}
+    if(event.type==='finished'){$('#mpv-status').textContent='Reprodução finalizada';}
+    if(event.type==='stopped'){$('#mpv-status').textContent='Reprodução interrompida';}
+    if(event.type==='error'){$('#mpv-status').textContent='Erro na reprodução';message(event.detail||'Falha no mpv.',true);}
+  });
+  const surface=$('.player-surface');
+  let scheduled=0;
+  const updateBounds=()=>{
+    cancelAnimationFrame(scheduled);
+    scheduled=requestAnimationFrame(()=>{
+      const r=surface.getBoundingClientRect();
+      void api.playerBounds({x:r.x,y:r.y,width:r.width,height:r.height}).catch(()=>{});
+    });
+  };
+  new ResizeObserver(updateBounds).observe(surface);
+  window.addEventListener('scroll',updateBounds,true);
+  window.addEventListener('resize',updateBounds);
+  updateBounds();
 }
 const labels:Record<Section,string>={live:'TV ao vivo',movie:'Filmes',series:'Séries',all:'Todo o catálogo',favorite:'Favoritos'};
 let debounce:number|undefined;
@@ -83,13 +104,13 @@ async function updateList(){const token=++state.seq;try{
  ($('#previous') as HTMLButtonElement).disabled=state.page===0;($('#next') as HTMLButtonElement).disabled=state.page+1>=totalPages;
  drawNav();
  }catch(e){if(token===state.seq)message(String(e),true);}}
-async function play(row:Item){state.selected=row;$('#now-name').textContent=row.name;$('#now-group').textContent=row.group;$('#player-title').textContent=row.name;$('#now-type').textContent=labels[row.type as Section]?.toUpperCase()||'REPRODUÇÃO';$('#player-hint').textContent='Abrindo reprodução em janela do mpv...';($('#fav-selected') as HTMLButtonElement).disabled=false;$('#fav-selected').textContent=state.favorites.has(row.id)?'★':'☆';
- try{await api.play(row.id);$('#player-hint').textContent='Reproduzindo no mpv. Use Alt+Tab para voltar ao catálogo. Tecla F fecha a tela cheia no mpv.';message('Reprodução enviada ao mpv.');}
+async function play(row:Item){state.selected=row;$('#now-name').textContent=row.name;$('#now-group').textContent=row.group;$('#player-title').textContent=row.name;$('#now-type').textContent=labels[row.type as Section]?.toUpperCase()||'REPRODUÇÃO';$('#player-hint').textContent='Carregando vídeo integrado...';($('#fav-selected') as HTMLButtonElement).disabled=false;$('#fav-selected').textContent=state.favorites.has(row.id)?'★':'☆';
+ try{await api.play(row.id);$('#player-hint').textContent='O vídeo está sendo reproduzido nesta área.';message('Inicializando reprodução integrada.');}
  catch(e){$('#player-hint').textContent='Não foi possível abrir o vídeo.';message((e as Error).message||String(e),true);}
  void updateList();}
 async function refreshMpv(){const st=await api.playerStatus();state.mpvReady=st.ready;$('#mpv-status').textContent=st.ready?'mpv encontrado — pronto para reprodução':'mpv não encontrado — selecione mpv.exe ou instale o reprodutor';$('#mpv-card').classList.toggle('missing',!st.ready);}
-function openDialog(){$('#source-dialog').setAttribute('open','');$('#import-status').textContent='';}
-function closeDialog(){$('#source-dialog').removeAttribute('open');}
+function openDialog(){$('#source-dialog').setAttribute('open','');$('#import-status').textContent='';void api.playerSurfaceVisible(false);}
+function closeDialog(){$('#source-dialog').removeAttribute('open');void api.playerSurfaceVisible(true);}
 function setBusy(b:boolean){state.busy=b;(['#select-file','#source-form button[type="submit"]','#close-dialog'] as string[]).forEach(k=>{($(k) as HTMLButtonElement).disabled=b;});}
 async function importFile(){if(state.busy)return;setBusy(true);try{const result=await api.pickPlaylist();if(result){closeDialog();state.source=await api.sources();drawSources();await changeSection('live');message(`${nf(result.count)} itens importados com sucesso.`);}}catch(e){$('#import-status').textContent=String((e as Error).message||e);}finally{setBusy(false);}}
 async function importUrl(url:string){if(state.busy)return;setBusy(true);try{const result=await api.importUrl(url);if(result){closeDialog();state.source=await api.sources();drawSources();await changeSection('live');message(`${nf(result.count)} itens importados com sucesso.`);}}catch(e){$('#import-status').textContent=String((e as Error).message||e);}finally{setBusy(false);}}

@@ -101,3 +101,7 @@ npx electron-builder --win --publish never
 - `src/desktop.ts`: interface de TV/desktop com favoritos, pesquisa e seleção de canais, filmes e episódios.
 
 **Avisos:** o mpv **não é incluído** nos instaladores desta versão. Streaming HTTP transporta credenciais e dados sem criptografia; a playlist importada também é salva localmente no perfil do aplicativo e pode conter links com credenciais em texto claro. Proteja o PC e use apenas fontes autorizadas. Não envie suas playlists para repositórios públicos. A ausência de DRM/codec compatível pode impedir a reprodução de alguns itens. Os episódios são apresentados individualmente conforme vêm na M3U (a organização em temporadas é futura). A página web original continua independente e não recebe essas permissões locais.
+
+## Reprodução integrada (Windows 0.3.0)
+
+O mpv é incorporado visualmente na área de vídeo do IPTVReader usando `--wid` em uma janela nativa filha do Electron. Não utiliza tela cheia externa. Necessário selecionar um `mpv.exe` compatível; a interface sincroniza posição e tamanho do vídeo ao redimensionar e mover o aplicativo. Falhas de abertura e reprodução são mostradas na interface. **A reprodução real precisa ser validada no Windows com o mpv instalado.**
