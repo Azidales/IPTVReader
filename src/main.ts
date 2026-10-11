@@ -4,7 +4,6 @@ import { parseM3U } from './core/m3u';
 import { parseXmltv, currentProgram } from './core/epg';
 import { connectXtream, getEpisodes } from './core/xtream';
 import { requireBrowserCompatibleUrl } from './core/urls';
-import { validateRemote } from './core/urls';
 import { loadSources, saveSources, favorites, saveFavorites } from './core/storage';
 import { PlayerManager } from './player/manager';
 
@@ -155,14 +154,13 @@ async function addSource(event: Event): Promise<void> {
       let content:string, base:string|undefined;
       if(kind==='file') { const file=input.get('file'); if(!(file instanceof File)||!file.size) throw new Error('Selecione um arquivo M3U.'); if(file.size>25*1024*1024) throw new Error('O limite por arquivo é 25 MB.');content=await file.text(); }
       else {
-        base=validateRemote(field('url'));
+        base=requireBrowserCompatibleUrl(field('url'));
         const response=await fetch(base,{signal:AbortSignal.timeout(25000)});
         if(!response.ok)throw new Error(`Não foi possível baixar a lista: HTTP ${response.status}.`);
         const length=Number(response.headers.get('content-length')||0);
         if(length>25*1024*1024)throw new Error('A lista excede 25 MB.');
         content=await response.text();if(content.length>25*1024*1024)throw new Error('A lista excede 25 MB.');
       }
-      if (base) requireBrowserCompatibleUrl(base);
       const parsed=parseM3U(content,id,base);source={id,name,kind,items:parsed.items,epgUrl:parsed.epgUrl,originUrl:base};
     }
     state.sources.push(source);
