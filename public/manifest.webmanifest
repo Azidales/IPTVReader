@@ -1,0 +1,1 @@
+{"name":"IPTVReader","short_name":"IPTVReader","description":"Player IPTV para navegador","start_url":"/IPTVReader/","scope":"/IPTVReader/","display":"standalone","background_color":"#0b101c","theme_color":"#0b101c","icons":[{"src":"/IPTVReader/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
