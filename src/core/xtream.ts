@@ -1,12 +1,12 @@
 import type { Channel, ContentType, Source } from './types';
-import { httpUrl } from './urls';
+import { requireBrowserCompatibleUrl } from './urls';
 
 export interface XtreamCredentials { server: string; username: string; password: string }
 interface XtreamItem { stream_id?: number; series_id?: number; name?: string; stream_icon?: string; cover?: string; category_id?: string; container_extension?: string; epg_channel_id?: string }
 interface XtreamCategory { category_id?: string; category_name?: string }
 
 export async function connectXtream(data: XtreamCredentials, sourceId: string, name: string): Promise<Source> {
-  const base = httpUrl(data.server).href.replace(/\/$/, '');
+  const base = requireBrowserCompatibleUrl(data.server).replace(/\/$/, '');
   if (!data.username || !data.password) throw new Error('Informe o usuário e a senha Xtream.');
   const api = new URL(`${base}/player_api.php`);
   api.searchParams.set('username', data.username);
