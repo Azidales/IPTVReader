@@ -1,6 +1,10 @@
-# IPTVReader 0.3.1-test.2
+# IPTVReader 0.3.1-test.3
 
 Pré-versão para Windows x64.
+
+## Controles do player no test.3
+
+Os controles principais agora ficam dentro da própria área do vídeo: pausar/continuar, som, parar e tela cheia. O vídeo nativo reserva a faixa inferior para os controles, evitando que o HWND do mpv cubra os botões. A tela cheia expande a área do player e recalcula o host nativo.
 
 ## Ajuste visual do test.2
 
