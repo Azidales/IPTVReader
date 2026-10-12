@@ -14,6 +14,9 @@ on:
       - 'electron-builder.yml'
       - '.github/workflows/desktop-windows.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
@@ -71,7 +74,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          gh release create "v$version" --target "$env:GITHUB_SHA" --prerelease --title "IPTVReader $version — vídeo nativo" --notes-file docs/native-video-test.md release/portable/IPTVReader-Portable.exe release/installer/IPTVReader-Setup.exe
+          $tag = "v$version"
           Copy-Item release/portable/SHA256SUMS.txt release/Portable-SHA256SUMS.txt
           Copy-Item release/installer/SHA256SUMS.txt release/Installer-SHA256SUMS.txt
-          gh release upload "v$version" release/Portable-SHA256SUMS.txt release/Installer-SHA256SUMS.txt
+          if (gh release view $tag 2>$null) {
+            gh release edit $tag --target "$env:GITHUB_SHA" --prerelease --title "IPTVReader $version — vídeo nativo" --notes-file docs/native-video-test.md
+            gh release upload $tag release/portable/IPTVReader-Portable.exe release/installer/IPTVReader-Setup.exe release/Portable-SHA256SUMS.txt release/Installer-SHA256SUMS.txt --clobber
+          } else {
+            gh release create $tag --target "$env:GITHUB_SHA" --prerelease --title "IPTVReader $version — vídeo nativo" --notes-file docs/native-video-test.md release/portable/IPTVReader-Portable.exe release/installer/IPTVReader-Setup.exe release/Portable-SHA256SUMS.txt release/Installer-SHA256SUMS.txt
+          }
