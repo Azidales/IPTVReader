@@ -22,17 +22,35 @@ const state={section:'live' as Section,query:'',group:'',page:0,source:[] as Sou
 try{const saved=JSON.parse(localStorage.getItem('iptvreader-desktop-favorites')||'[]');if(Array.isArray(saved))state.favorites=new Set(saved.filter((x:unknown)=>typeof x==='string'));}catch{}
 function favorite(id:string){if(state.favorites.has(id))state.favorites.delete(id);else state.favorites.add(id);localStorage.setItem('iptvreader-desktop-favorites',JSON.stringify([...state.favorites]));void updateList();}
 const icons:Record<Section,string>={live:'▣',movie:'▤',series:'▥',all:'▦',favorite:'★'};
+let schedulePlayerBounds=()=>{};
+function currentVideoBounds(){
+ const r=$('.player-surface').getBoundingClientRect();
+ const controls=$('.player-controls').getBoundingClientRect();
+ const controlsHeight=Math.max(0,Math.min(controls.height,r.height-45));
+ return {x:r.x,y:r.y,width:r.width,height:Math.max(45,r.height-controlsHeight)};
+}
+async function togglePlayerFullscreen(){
+ try{
+  const active=await api.fullscreen();
+  document.body.classList.toggle('player-fullscreen',active);
+  const button=$('#player-fullscreen') as HTMLButtonElement;
+  button.setAttribute('aria-label',active?'Sair da tela cheia':'Tela cheia');
+  button.title=active?'Sair da tela cheia':'Tela cheia';
+  button.textContent=active?'⤢':'⛶';
+  requestAnimationFrame(()=>schedulePlayerBounds());
+ }catch(e){message(String((e as Error).message||e),true);}
+}
 function installUI(){
   $('#app').innerHTML=`<div class="layout">
   <aside class="side"><div class="logo"><div class="logo-mark">▶</div><div><b>IPTV<span>Reader</span></b><small>DESKTOP • WINDOWS</small></div></div>
   <div class="side-label">BIBLIOTECA</div><nav id="navigation"></nav>
   <div class="side-label source-head">FONTES <button id="import-side" class="circle-btn" title="Adicionar fonte">＋</button></div><div id="source-list" class="source-list"></div>
   <div class="side-bottom"><span class="status-dot"></span> Reprodução local e direta <small>Sem gateway e sem assinaturas do aplicativo</small></div></aside>
-  <main class="main"><header class="topbar"><div class="crumb">IPTVREADER <span>/</span> <strong id="crumb">TV ao vivo</strong></div><div class="top-actions"><button id="fullscreen" class="neutral-btn">⛶ Tela cheia</button><button id="add-source" class="primary-btn">＋ Importar M3U</button></div></header>
+  <main class="main"><header class="topbar"><div class="crumb">IPTVREADER <span>/</span> <strong id="crumb">TV ao vivo</strong></div><div class="top-actions"><button id="add-source" class="primary-btn">＋ Importar M3U</button></div></header>
   <div class="body"><div class="title-row"><div><div class="eyebrow">✦ SUA CENTRAL DE ENTRETENIMENTO</div><h1 id="heading">TV ao vivo</h1><p>Seu catálogo, seus dispositivos, sem depender de um navegador.</p></div><span class="total-badge" id="total-items">0 itens</span></div>
-  <div class="columns"><div class="watch-column"><section class="watch-card"><div class="player-surface"><div class="surface-glow"></div><div class="screen-center"><div class="play-emblem">▶</div><h2 id="player-title">Pronto para assistir</h2><p id="player-hint">Selecione um item do catálogo. O vídeo será reproduzido pelo mpv nesta área, dentro do IPTVReader.</p></div></div>
+  <div class="columns"><div class="watch-column"><section class="watch-card"><div class="player-surface"><div class="surface-glow"></div><div class="screen-center"><div class="play-emblem">▶</div><h2 id="player-title">Pronto para assistir</h2><p id="player-hint">Selecione um item do catálogo. O vídeo será reproduzido pelo mpv nesta área, dentro do IPTVReader.</p></div><div class="player-controls" aria-label="Controles do player"><button class="player-control" data-command="pause" title="Pausar / continuar" aria-label="Pausar ou continuar">⏯</button><button class="player-control" data-command="mute" title="Ativar / desativar som" aria-label="Ativar ou desativar som">🔊</button><button class="player-control" data-command="stop" title="Parar" aria-label="Parar">■</button><span class="player-control-title" id="player-control-title">Nenhum conteúdo</span><button class="player-control player-fullscreen-btn" id="player-fullscreen" title="Tela cheia" aria-label="Tela cheia">⛶</button></div></div>
     <div class="watch-info"><div class="watch-kicker"><span class="live-mark"></span><span id="now-type">NENHUMA REPRODUÇÃO</span></div><div class="watch-details"><div class="watch-icon">▶</div><div><h3 id="now-name">Nenhum conteúdo selecionado</h3><p id="now-group">Importe sua lista para começar.</p></div><button id="fav-selected" class="circle-btn" title="Favoritar" disabled>☆</button></div>
-    <div class="watch-controls"><button data-command="pause" class="neutral-btn">⏯ Pausar / continuar</button><button data-command="mute" class="neutral-btn">♫ Mudo</button><button data-command="stop" class="neutral-btn">■ Parar</button></div></div></section>
+    </div></section>
     <section class="mpv-card" id="mpv-card"><div><strong>Reprodutor mpv</strong><p id="mpv-status">Verificando instalação...</p></div><div class="mpv-actions"><button id="choose-mpv" class="neutral-btn">Selecionar mpv.exe</button><button id="download-mpv" class="outline-btn">Obter mpv ↗</button></div></section>
     <div class="tip">ℹ A reprodução é integrada ao IPTVReader com mpv nativo. Links HTTP continuam funcionando fora das restrições do navegador. Os dados da playlist ficam apenas neste computador.</div>
   </div><section class="catalog"><div class="catalog-heading"><div><h2>Explorar conteúdo</h2><p id="result-count">Selecione um canal, filme ou episódio</p></div><button id="refresh-btn" class="circle-btn" title="Atualizar catálogo">↻</button></div>
@@ -56,9 +74,12 @@ function installUI(){
   $('#fav-selected').addEventListener('click',()=>{if(state.selected)favorite(state.selected.id);});
   $('#choose-mpv').addEventListener('click',async()=>{try{await api.chooseMpv();await refreshMpv();}catch(e){message(String(e),true);}});
   $('#download-mpv').addEventListener('click',()=>void api.downloadMpv());
-  $('#fullscreen').addEventListener('click',()=>void api.fullscreen());
   document.querySelectorAll<HTMLElement>('[data-command]').forEach(b=>b.addEventListener('click',()=>void api.playerCommand(b.dataset.command!).catch(e=>message(String(e),true))));
-  window.addEventListener('keydown',ev=>{if(ev.key==='F11'){ev.preventDefault();void api.fullscreen();}});
+  $('#player-fullscreen').addEventListener('click',()=>void togglePlayerFullscreen());
+  window.addEventListener('keydown',ev=>{
+    if(ev.key==='F11'){ev.preventDefault();void togglePlayerFullscreen();}
+    if(ev.key==='Escape'&&document.body.classList.contains('player-fullscreen')){ev.preventDefault();void togglePlayerFullscreen();}
+  });
   api.onProgress(p=>{const pct=p.totalBytes?Math.round(p.bytes*100/p.totalBytes):0;$('#import-status').textContent=`Importando... ${nf(p.count)} entradas processadas · ${pct}%`;});
   api.onDownload(p=>{$('#import-status').textContent=`Baixando M3U: ${nf(Math.round(p.bytes/1024/1024))} MB`;});
   api.onUpdate(s=>{state.source=s;drawSources();void updateList();});
@@ -74,10 +95,10 @@ function installUI(){
   const updateBounds=()=>{
     cancelAnimationFrame(scheduled);
     scheduled=requestAnimationFrame(()=>{
-      const r=surface.getBoundingClientRect();
-      void api.playerBounds({x:r.x,y:r.y,width:r.width,height:r.height}).catch(()=>{});
+      void api.playerBounds(currentVideoBounds()).catch(()=>{});
     });
   };
+  schedulePlayerBounds=updateBounds;
   new ResizeObserver(updateBounds).observe(surface);
   window.addEventListener('scroll',updateBounds,true);
   window.addEventListener('resize',updateBounds);
@@ -104,8 +125,8 @@ async function updateList(){const token=++state.seq;try{
  ($('#previous') as HTMLButtonElement).disabled=state.page===0;($('#next') as HTMLButtonElement).disabled=state.page+1>=totalPages;
  drawNav();
  }catch(e){if(token===state.seq)message(String(e),true);}}
-async function play(row:Item){state.selected=row;$('#now-name').textContent=row.name;$('#now-group').textContent=row.group;$('#player-title').textContent=row.name;$('#now-type').textContent=labels[row.type as Section]?.toUpperCase()||'REPRODUÇÃO';$('#player-hint').textContent='Carregando vídeo integrado...';($('#fav-selected') as HTMLButtonElement).disabled=false;$('#fav-selected').textContent=state.favorites.has(row.id)?'★':'☆';
- try{await api.play(row.id);$('#player-hint').textContent='O vídeo está sendo reproduzido nesta área.';message('Inicializando reprodução integrada.');}
+async function play(row:Item){state.selected=row;$('#now-name').textContent=row.name;$('#now-group').textContent=row.group;$('#player-title').textContent=row.name;$('#player-control-title').textContent=row.name;$('#now-type').textContent=labels[row.type as Section]?.toUpperCase()||'REPRODUÇÃO';$('#player-hint').textContent='Carregando vídeo integrado...';($('#fav-selected') as HTMLButtonElement).disabled=false;$('#fav-selected').textContent=state.favorites.has(row.id)?'★':'☆';
+ try{await api.playerBounds(currentVideoBounds());await api.play(row.id);$('#player-hint').textContent='Reprodução inicializada. Aguardando vídeo.';message('Inicializando reprodução integrada.');}
  catch(e){$('#player-hint').textContent='Não foi possível abrir o vídeo.';message((e as Error).message||String(e),true);}
  void updateList();}
 async function refreshMpv(){const st=await api.playerStatus();state.mpvReady=st.ready;$('#mpv-status').textContent=st.ready?'mpv encontrado — pronto para reprodução':'mpv não encontrado — selecione mpv.exe ou instale o reprodutor';$('#mpv-card').classList.toggle('missing',!st.ready);}

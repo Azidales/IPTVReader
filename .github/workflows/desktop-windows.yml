@@ -1,19 +1,24 @@
 name: Windows Desktop Build
 on:
   push:
-    branches: [main]
+    branches: [main, fix/native-video]
     paths:
       - 'desktop/**'
       - 'src/desktop.ts'
       - 'src/styles/desktop.css'
       - 'desktop.html'
       - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
       - 'vite.desktop.config.ts'
       - 'electron-builder.yml'
       - '.github/workflows/desktop-windows.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
-  contents: read
+  contents: write
 jobs:
   windows:
     runs-on: windows-latest
@@ -24,9 +29,11 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Validate catalog and scripts
         run: npm run test:desktop
+      - name: Validate playlist parser
+        run: npm test
       - name: Build desktop renderer
         run: npm run build:desktop
       - name: Build installer and portable executable
@@ -60,3 +67,19 @@ jobs:
           name: IPTVReader-Windows-Installer
           path: release/installer/*
           retention-days: 30
+      - name: Publish test release
+        if: github.ref == 'refs/heads/fix/native-video'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          Copy-Item release/portable/SHA256SUMS.txt release/Portable-SHA256SUMS.txt
+          Copy-Item release/installer/SHA256SUMS.txt release/Installer-SHA256SUMS.txt
+          if (gh release view $tag 2>$null) {
+            gh release edit $tag --target "$env:GITHUB_SHA" --prerelease --title "IPTVReader $version — vídeo nativo" --notes-file docs/native-video-test.md
+            gh release upload $tag release/portable/IPTVReader-Portable.exe release/installer/IPTVReader-Setup.exe release/Portable-SHA256SUMS.txt release/Installer-SHA256SUMS.txt --clobber
+          } else {
+            gh release create $tag --target "$env:GITHUB_SHA" --prerelease --title "IPTVReader $version — vídeo nativo" --notes-file docs/native-video-test.md release/portable/IPTVReader-Portable.exe release/installer/IPTVReader-Setup.exe release/Portable-SHA256SUMS.txt release/Installer-SHA256SUMS.txt
+          }

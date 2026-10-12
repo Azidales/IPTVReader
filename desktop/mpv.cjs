@@ -30,7 +30,13 @@ class MpvController {
     if(!binary) throw new Error('mpv não encontrado. Instale o mpv no Windows ou selecione o arquivo mpv.exe nas configurações do IPTVReader.');
     this.close();this.wid=hwnd;this.lastError='';
     this.pipe=process.platform==='win32'?`\\\\.\\pipe\\iptvreader-${crypto.randomUUID()}`:path.join(require('node:os').tmpdir(),`iptvreader-${crypto.randomUUID()}.sock`);
-    const proc=spawn(binary,['--no-config','--idle=yes','--force-window=yes','--osc=yes','--hwdec=auto-safe','--vo=gpu','--msg-level=all=warn','--wid='+hwnd,'--input-ipc-server='+this.pipe],{stdio:['ignore','ignore','pipe'],windowsHide:true});
+    const args=['--no-config','--idle=yes','--force-window=yes','--osc=no',
+      '--input-default-bindings=no','--input-vo-keyboard=no','--hwdec=auto-safe','--vo=gpu',
+      '--msg-level=all=warn','--wid='+hwnd,'--input-ipc-server='+this.pipe];
+    // Use the native Windows presentation path instead of automatic GL/Vulkan
+    // selection. Hardware decoding may still fall back to software safely.
+    if(process.platform==='win32')args.push('--gpu-api=d3d11','--gpu-context=d3d11','--d3d11-flip=no');
+    const proc=spawn(binary,args,{stdio:['ignore','ignore','pipe'],windowsHide:true});
     this.proc=proc;
     let launchError=null;
     proc.stderr?.on('data',chunk=>{this.lastError=redact(this.lastError+chunk.toString('utf8'));});

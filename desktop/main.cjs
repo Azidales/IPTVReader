@@ -6,35 +6,34 @@ const {pipeline}=require('node:stream/promises');
 const {Readable,Transform}=require('node:stream');
 const {Catalog}=require('./catalog.cjs');
 const {MpvController,resolveMpv,nativeWindowId}=require('./mpv.cjs');
-let window=null, videoHost=null, videoRect=null, videoSurfaceVisible=true, catalog=null, settings={mpvPath:''}, importing=false;
+const {NativeVideoHost}=require('./video-host.cjs');
+let window=null, videoHost=null, videoRect=null, videoSurfaceVisible=true, playbackRequested=false, catalog=null, settings={mpvPath:''}, importing=false;
 const settingsPath=()=>path.join(app.getPath('userData'),'desktop-settings.json');
-const player=new MpvController(()=>settings.mpvPath,event=>notify('player:event',event));
+const player=new MpvController(()=>settings.mpvPath,event=>{
+ if(['error','finished','stopped'].includes(event.type)){playbackRequested=false;videoHost?.hide();}
+ notify('player:event',event);
+});
 function notify(type,value){if(window&&!window.isDestroyed())window.webContents.send(type,value);}
 function ensureVideoHost(){
   if(videoHost && !videoHost.isDestroyed())return videoHost;
   if(!window || window.isDestroyed())throw new Error('Janela principal não disponível.');
-  videoHost=new BrowserWindow({
-    parent:window,frame:false,show:false,focusable:false,resizable:false,
-    skipTaskbar:true,backgroundColor:'#000000',webPreferences:{
-      sandbox:true,contextIsolation:true,nodeIntegration:false
-    }
-  });
-  videoHost.setMenuBarVisibility(false);
-  videoHost.on('closed',()=>{videoHost=null;player.close();});
+  videoHost=new NativeVideoHost(window);
   return videoHost;
 }
 function syncVideoHost(){
   if(!videoHost || videoHost.isDestroyed() || !window || window.isDestroyed())return;
-  if(!videoRect || !videoSurfaceVisible || window.isMinimized() || !window.isVisible()){
+  if(!videoRect || !videoSurfaceVisible || !playbackRequested || window.isMinimized() || !window.isVisible()){
     videoHost.hide();return;
   }
   const area=window.getContentBounds();
-  const x=Math.max(0,Math.round(videoRect.x)),y=Math.max(0,Math.round(videoRect.y));
-  const width=Math.min(Math.round(videoRect.width),Math.max(0,area.width-x));
-  const height=Math.min(Math.round(videoRect.height),Math.max(0,area.height-y));
+  const zoom=window.webContents.getZoomFactor();
+  const x=Math.round(videoRect.x*zoom),y=Math.round(videoRect.y*zoom);
+  const width=Math.round(videoRect.width*zoom),height=Math.round(videoRect.height*zoom);
+  // Avoid shifting/rescaling partially scrolled video over the page header.
+  if(x<0||y<0||x+width>area.width+1||y+height>area.height+1){videoHost.hide();return;}
   if(width<80||height<45){videoHost.hide();return;}
   videoHost.setBounds({x:area.x+x,y:area.y+y,width,height});
-  if(player.isActive())videoHost.showInactive();
+  videoHost.showInactive();
 }
 async function persistSettings(){await fsp.writeFile(settingsPath(),JSON.stringify(settings));}
 async function importSelected(file,name){
@@ -75,14 +74,18 @@ function setupIPC(){
  ipcMain.handle('player:play',async(_event,id)=>{
   const item=await catalog.item(id);if(!item)throw new Error('Item não encontrado no catálogo.');
   const host=ensureVideoHost();
+  if(!videoRect)throw new Error('Aguarde a área de vídeo ficar pronta.');
+  playbackRequested=true;
+  syncVideoHost(); // Establish bounds and a visible native HWND before mpv starts.
   const handle=nativeWindowId(host.getNativeWindowHandle());
   try {await player.play(item.url,handle);syncVideoHost();return {name:item.name,group:item.group};}
-  catch(err){host.hide();throw err;}
+  catch(err){playbackRequested=false;host.hide();throw err;}
  });
  ipcMain.handle('player:command',(_event,cmd)=>{
-  const allowed={pause:['cycle','pause'],stop:['stop'],mute:['cycle','mute'],fullscreen:['cycle','fullscreen']};
+  if(cmd==='fullscreen'){window.setFullScreen(!window.isFullScreen());return true;}
+  const allowed={pause:['cycle','pause'],stop:['stop'],mute:['cycle','mute']};
   if(!Object.hasOwn(allowed,cmd))throw new Error('Comando não permitido.');
-  const ok=player.command(allowed[cmd]);if(cmd==='stop'){videoHost?.hide();notify('player:event',{type:'stopped'});}return ok;
+  const ok=player.command(allowed[cmd]);if(cmd==='stop'){playbackRequested=false;videoHost?.hide();notify('player:event',{type:'stopped'});}return ok;
  });
  ipcMain.handle('player:bounds',(_event,rect)=>{
   if(!rect || ![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite))return false;
@@ -110,6 +113,9 @@ function createWindow(){
  window.on('move',syncVideoHost);
  window.on('resize',syncVideoHost);
  window.on('restore',syncVideoHost);
+ window.on('show',syncVideoHost);
+ window.on('enter-full-screen',syncVideoHost);
+ window.on('leave-full-screen',syncVideoHost);
  window.on('minimize',()=>videoHost?.hide());
  window.on('hide',()=>videoHost?.hide());
  window.on('closed',()=>{player.close();if(videoHost&&!videoHost.isDestroyed())videoHost.destroy();videoHost=null;window=null;});
