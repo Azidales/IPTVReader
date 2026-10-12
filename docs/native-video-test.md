@@ -1,6 +1,10 @@
-# IPTVReader 0.3.1-test.1
+# IPTVReader 0.3.1-test.2
 
-Pré-versão para Windows x64. O mpv continua sendo instalado/selecionado separadamente.
+Pré-versão para Windows x64.
+
+## Ajuste visual do test.2
+
+Corrige a ordem de camadas do modal de importação: textos e elementos da área do player agora ficam atrás do diálogo. A superfície nativa do mpv continua sendo ocultada enquanto o modal está aberto. O mpv continua sendo instalado/selecionado separadamente.
 
 ## Correção
 
